@@ -50,6 +50,35 @@ It is also capable of submitting Bitcoin block headers to the BTC Parachain.
 
 To start the Vault follow the instructions contained in the [Vault README](./vault/README.md).
 
+##### TLDR: 
+./vault generate-parachain-key > /etc/vault/keyfile.json
+```
+[Unit]
+Description=interlay_vault
+After=network.target bitcoind.service
+
+[Service]
+Environment="RUST_LOG=info"
+Type=simple
+User=vault
+Group=vault
+ExecStart=/usr/bin/vault \
+    --bitcoin-rpc-url http://localhost:8332 \
+    --bitcoin-rpc-user 'rpcuserhai7ooqu6oos1ebashahcei1urup9Eet' \
+    --bitcoin-rpc-pass 'rpcpasswordThai0oa7oeng7Eethee4kieDahghooX2' \
+    --keyfile /etc/vault/keyfile.json \
+    --keyname "wdDF4swikWCMjTVSx7amgfckFiTa4dA8qbhqyoWtfnSExiYek" \
+    --auto-register=DOT=300000000000 \
+    --btc-parachain-url 'wss://api.interlay.io:443/parachain'
+
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ### Development
 
 Building requires a specific rust toolchain and nightly compiler version. The
