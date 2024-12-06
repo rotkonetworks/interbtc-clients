@@ -4,8 +4,10 @@ use crate::{
 };
 use clap::Parser;
 use sp_core::{sr25519, Pair};
+use sp_core::crypto::SecretStringError::InvalidFormat;
 use sp_keyring::AccountKeyring;
 use std::{collections::HashMap, num::ParseIntError, str::FromStr, time::Duration};
+use hex;
 
 #[derive(Parser, Debug, Clone)]
 pub struct ProviderUserOpts {
@@ -15,7 +17,7 @@ pub struct ProviderUserOpts {
 
     /// Path to the json file containing key pairs in a map.
     /// Valid content of this file is e.g.
-    /// `{ "MyUser1": "<Polkadot Account Mnemonic>", "MyUser2": "<Polkadot Account Mnemonic>" }`.
+    /// `{ "MyUser1": "<Polkadot Account Mnemonic or Hex Secret Seed>", "MyUser2": "<Polkadot Account Mnemonic or Hex Secret Seed>" }`.
     #[clap(long, conflicts_with_all = ["keyring"], requires = "keyname", required_unless_present_any = ["keyring","keyuri"])]
     pub keyfile: Option<String>,
 
@@ -29,47 +31,59 @@ pub struct ProviderUserOpts {
 }
 
 impl ProviderUserOpts {
-    /// Get the key pair and the username, the latter of which is used for wallet selection.
     pub fn get_key_pair(&self) -> Result<(sr25519::Pair, String), Error> {
-        // Load parachain credentials
-        let (pair, user_name) = match (
-            self.keyfile.as_ref(), // Check if keyfile is provided
-            self.keyname.as_ref(), // Check if keyname is provided
-            &self.keyring,         // Check if keyring is available
-            self.keyuri.as_ref(),  // Check if secret phrase is provided
+        match (
+            self.keyfile.as_ref(),
+            self.keyname.as_ref(),
+            &self.keyring,
+            self.keyuri.as_ref(),
         ) {
-            // If keyfile and keyname are provided
             (Some(file_path), Some(keyname), None, None) => {
-                (get_credentials_from_file(file_path, keyname)?, keyname.to_string())
+                Ok((get_credentials_from_file(file_path, keyname)?, keyname.to_string()))
             }
-            // If keyname and secret phrase are provided
-            (None, Some(keyname), None, Some(keyuri)) => (get_pair_from_phrase(keyuri)?, keyname.to_string()),
-            // If keyfile, keyname, and secret phrase are provided
-            (Some(_file_path), Some(keyname), None, Some(keyuri)) => {
-                (get_pair_from_phrase(keyuri)?, keyname.to_string())
+            (None, Some(keyname), None, Some(keyuri)) => {
+                Ok((get_pair_from_uri(keyuri)?, keyname.to_string()))
             }
-            // If insufficient credentials are provided, perform sanity check
-            (None, None, Some(keyring), None) => (keyring.pair(), keyring.to_string()),
-            _ => {
-                // This branch should never occur due to clap constraints
-                return Err(Error::KeyringArgumentError);
+            (Some(_), Some(keyname), None, Some(keyuri)) => {
+                Ok((get_pair_from_uri(keyuri)?, keyname.to_string()))
             }
-        };
-
-        Ok((pair, user_name))
+            (None, None, Some(keyring), None) => Ok((keyring.pair(), keyring.to_string())),
+            _ => Err(Error::KeyringArgumentError),
+        }
     }
 }
 
-/// Creates a key pair from phrase
-///
-/// # Arguments
-///
-/// * `keyuri` - secret phrase to generate pair
-fn get_pair_from_phrase(keyuri: &str) -> Result<sr25519::Pair, KeyLoadingError> {
-    sr25519::Pair::from_string(keyuri, None).map_err(KeyLoadingError::SecretStringError)
+/// Creates a key pair from URI (supports both mnemonic and hex seed)
+fn get_pair_from_uri(uri: &str) -> Result<sr25519::Pair, KeyLoadingError> {
+    // Try parsing as hex seed first
+    if let Ok(pair) = get_pair_from_hex_seed(uri) {
+        return Ok(pair);
+    }
+
+    // Fall back to mnemonic parsing
+    sr25519::Pair::from_string(uri, None).map_err(KeyLoadingError::SecretStringError)
 }
 
-/// Loads the credentials for the given user from the keyfile
+/// Creates a key pair from hex seed
+fn get_pair_from_hex_seed(hex_seed: &str) -> Result<sr25519::Pair, KeyLoadingError> {
+    let clean_hex = hex_seed.trim_start_matches("0x");
+    
+    // Parse hex to bytes
+    let seed_bytes = hex::decode(clean_hex)
+        .map_err(|_| KeyLoadingError::SecretStringError(InvalidFormat))?;
+    
+    if seed_bytes.len() != 32 {
+        return Err(KeyLoadingError::SecretStringError(InvalidFormat));
+    }
+
+    // Create pair from seed bytes
+    let pair = sr25519::Pair::from_seed_slice(&seed_bytes)
+        .map_err(|_| KeyLoadingError::SecretStringError(InvalidFormat))?;
+    
+    Ok(pair)
+}
+
+/// Loads the credentials from file (supports both mnemonic and hex seed)
 ///
 /// # Arguments
 ///
@@ -79,9 +93,8 @@ fn get_credentials_from_file(file_path: &str, keyname: &str) -> Result<sr25519::
     let file = std::fs::File::open(file_path)?;
     let reader = std::io::BufReader::new(file);
     let map: HashMap<String, String> = serde_json::from_reader(reader)?;
-    let pair_str = map.get(keyname).ok_or(KeyLoadingError::KeyNotFound)?;
-    let pair = get_pair_from_phrase(pair_str)?;
-    Ok(pair)
+    let key_str = map.get(keyname).ok_or(KeyLoadingError::KeyNotFound)?;
+    get_pair_from_uri(key_str)
 }
 
 pub fn parse_account_keyring(src: &str) -> Result<AccountKeyring, Error> {
