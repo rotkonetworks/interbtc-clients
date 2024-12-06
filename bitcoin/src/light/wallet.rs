@@ -339,7 +339,8 @@ impl Wallet {
         while let Some(Ok(utxo)) = utxo_stream.next().await {
             log::info!("Found utxo: {}", utxo.outpoint.txid);
 
-            if prev_txid.contains(&utxo.outpoint.txid) {
+//            if prev_txid.contains(&utxo.outpoint.txid) {
+            if prev_txid.as_ref() == Some(&utxo.outpoint.txid) {
                 // skip if trying to spend from the tx we are replacing
                 continue;
             }

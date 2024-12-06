@@ -284,7 +284,7 @@ impl ElectrsClient {
                 .vout
                 .iter()
                 .filter_map(|vout| {
-                    if vout.scriptpubkey_address.contains(&address) {
+                    if vout.scriptpubkey_address.as_ref() == Some(&address) {
                         Some(vout.value)
                     } else {
                         None
