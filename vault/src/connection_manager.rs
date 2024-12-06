@@ -1,5 +1,5 @@
 pub use crate::{
-    cli::{LoggingFormat, MonitoringConfig, RestartPolicy, ServiceConfig},
+    cli::{MonitoringConfig, RestartPolicy, ServiceConfig},
     trace::init_subscriber,
     Error,
 };

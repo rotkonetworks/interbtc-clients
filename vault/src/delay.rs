@@ -50,7 +50,7 @@ impl RandomDelay for OrderedVaultsDelay {
         fn hash_vault(data: &[u8; 32], account_id: &AccountId) -> sha256::Hash {
             let account_id = account_id.0.clone();
             let account_id: [u8; 32] = (*account_id).clone().into();
-            let xor = data.zip(account_id).map(|(a, b)| a ^ b);
+            let xor: Vec<u8> = data.iter().zip(account_id.iter()).map(|(a, b)| a ^ b).collect();
             sha256::Hash::hash(&xor)
         }
 
