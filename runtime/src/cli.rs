@@ -25,7 +25,7 @@ pub struct ProviderUserOpts {
     #[clap(long, conflicts_with = "keyring", required_unless_present = "keyring")]
     pub keyname: Option<String>,
 
-    /// The name of the account from the keyfile to use.
+    /// The secret seed or mnemonic to use directly.
     #[clap(long, conflicts_with_all = ["keyring"], requires = "keyname", required_unless_present_any = ["keyring","keyfile"])]
     pub keyuri: Option<String>,
 }
@@ -55,9 +55,10 @@ impl ProviderUserOpts {
 
 /// Creates a key pair from URI (supports both mnemonic and hex seed)
 fn get_pair_from_uri(uri: &str) -> Result<sr25519::Pair, KeyLoadingError> {
-    // Try parsing as hex seed first
-    if let Ok(pair) = get_pair_from_hex_seed(uri) {
-        return Ok(pair);
+    // Try parsing as hex seed first if it looks like a hex string
+    if (uri.len() == 64 && uri.chars().all(|c| c.is_ascii_hexdigit())) || 
+       (uri.starts_with("0x") && uri.len() == 66 && uri[2..].chars().all(|c| c.is_ascii_hexdigit())) {
+        return get_pair_from_hex_seed(uri);
     }
 
     // Fall back to mnemonic parsing
@@ -94,7 +95,14 @@ fn get_credentials_from_file(file_path: &str, keyname: &str) -> Result<sr25519::
     let reader = std::io::BufReader::new(file);
     let map: HashMap<String, String> = serde_json::from_reader(reader)?;
     let key_str = map.get(keyname).ok_or(KeyLoadingError::KeyNotFound)?;
-    get_pair_from_uri(key_str)
+    
+    // Try hex first if it starts with 0x
+    if key_str.starts_with("0x") {
+        return get_pair_from_hex_seed(key_str);
+    }
+    
+    // Otherwise try as mnemonic
+    sr25519::Pair::from_string(key_str, None).map_err(KeyLoadingError::SecretStringError)
 }
 
 pub fn parse_account_keyring(src: &str) -> Result<AccountKeyring, Error> {
