@@ -63,6 +63,6 @@ pub struct TransactionValue {
 pub struct UtxoValue {
     pub txid: Txid,
     pub vout: u32,
-    pub status: TransactionStatus,
+//    pub status: TransactionStatus,
     pub value: u64,
 }

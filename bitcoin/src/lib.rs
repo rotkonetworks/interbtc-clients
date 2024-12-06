@@ -1088,7 +1088,7 @@ impl BitcoinCoreApi for BitcoinCore {
                     self.electrs_client.get_tx_merkle_block_proof(&transaction.txid),
                 )
                 .await?;
-                self.rpc.call(
+                self.rpc.call::<()>(
                     "importprunedfunds",
                     &[serde_json::to_value(raw_tx)?, serde_json::to_value(raw_merkle_proof)?],
                 )?;
