@@ -1,0 +1,51 @@
+name: Release Vault Binary
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang clang-dev libc6-dev libssl-dev pkg-config curl jq xxd
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
+
+      - name: Fetch latest metadata
+        run: |
+          curl -sX POST -H "Content-Type: application/json" \
+            --data '{"jsonrpc":"2.0","method":"state_getMetadata", "id": 1}' \
+            api.interlay.io:443/parachain | jq .result | cut -d '"' -f 2 | xxd -r -p > runtime/metadata.scale
+
+      - name: Build release
+        run: |
+          cargo build --release --features=parachain-metadata-interlay --bin vault
+          cp target/release/vault vault-parachain-metadata-interlay
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: vault-parachain-metadata-interlay
+          name: Release ${{ github.ref_name }}
+          body: |
+            Automated release of vault binary with latest metadata from api.interlay.io
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
