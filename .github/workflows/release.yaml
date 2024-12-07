@@ -1,10 +1,8 @@
-name: Release Vault Binary
-
+name: Release Vault Binaries
 on:
   push:
     tags:
       - '*'
-
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C target-cpu=native"
@@ -12,18 +10,22 @@ env:
   RUST_BACKTRACE: full
   RUST_TOOLCHAIN: nightly
   CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
-  CARGO_BUILD_FEATURES: parachain-metadata-interlay
   CARGO_BUILD_BIN: vault
-  PARACHAIN_API_URL: api.interlay.io:443/parachain
-  VAULT_BINARY_NAME: vault-parachain-metadata-interlay
   APT_FLAGS: --no-install-recommends --yes
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        parachain: [interlay, kintsugi]
+        include:
+          - parachain: interlay
+            api_url: api.interlay.io:443/parachain
+          - parachain: kintsugi
+            api_url: api.kintsugi.io:443/parachain
     steps:
       - uses: actions/checkout@v3
-
       - name: Install system dependencies
         run: |
           sudo apt-get update ${{ env.APT_FLAGS }}
@@ -38,7 +40,6 @@ jobs:
             curl \
             jq \
             xxd
-
       - name: Set up Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -46,7 +47,6 @@ jobs:
           target: ${{ env.CARGO_BUILD_TARGET }}
           override: true
           components: rustfmt, clippy
-
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
@@ -54,34 +54,30 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.parachain }}
       - name: Fetch latest metadata
         run: |
           curl -sX POST -H "Content-Type: application/json" \
             --data '{"jsonrpc":"2.0","method":"state_getMetadata", "id": 1}' \
-            ${{ env.PARACHAIN_API_URL }} | jq .result | cut -d '"' -f 2 | xxd -r -p > runtime/metadata.scale
-
+            ${{ matrix.api_url }} | jq .result | cut -d '"' -f 2 | xxd -r -p > runtime/metadata.scale
       - name: Build release binary
         run: |
           cargo build --release \
             --target ${{ env.CARGO_BUILD_TARGET }} \
-            --features=${{ env.CARGO_BUILD_FEATURES }} \
+            --features=parachain-metadata-${{ matrix.parachain }} \
             --bin ${{ env.CARGO_BUILD_BIN }}
-          cp target/${{ env.CARGO_BUILD_TARGET }}/release/${{ env.CARGO_BUILD_BIN }} ${{ env.VAULT_BINARY_NAME }}
-
+          cp target/${{ env.CARGO_BUILD_TARGET }}/release/${{ env.CARGO_BUILD_BIN }} vault-parachain-metadata-${{ matrix.parachain }}
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ env.VAULT_BINARY_NAME }}
+          files: vault-parachain-metadata-${{ matrix.parachain }}
           name: Release ${{ github.ref_name }}
           body: |
-            Automated release of vault binary with latest metadata from ${{ env.PARACHAIN_API_URL }}
-            
+            Automated release of vault binary with latest metadata from ${{ matrix.api_url }}
             Build information:
             - Target: ${{ env.CARGO_BUILD_TARGET }}
-            - Features: ${{ env.CARGO_BUILD_FEATURES }}
+            - Features: parachain-metadata-${{ matrix.parachain }}
             - Rust toolchain: ${{ env.RUST_TOOLCHAIN }}
           draft: false
           prerelease: false
